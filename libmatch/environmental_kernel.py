@@ -161,7 +161,7 @@ def process(params):
     return frameprodFunc(**kargs)
 
 def framesprod(frames1, frames2=None, chemicalKernelmat=None, frameprodFunc=None, queue=None,dispbar=False):
-    global globalFrames
+    global globalFrames # share RAM: https://stackoverflow.com/a/17786444
     '''
     Computes the environmental matrices between two list of AlchemyFrame.
 
