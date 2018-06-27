@@ -148,7 +148,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    print_logo()
+    # print_logo()
 ###### Reads parameters input ######
     filename = args.filename[0]
     prefix = args.prefix

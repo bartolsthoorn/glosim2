@@ -149,8 +149,19 @@ except:
 #     return envkernels
 
 
+globalFrames = None
+
+def process(params):
+    it, jt, frameprodFunc, chemicalKernelmat = params
+    keys1, vals1 = globalFrames[it].get_arrays()
+    keys2, vals2 = globalFrames[jt].get_arrays()
+
+    kargs = {'keys1': keys1, 'keys2': keys2, 'vals1': vals1, 'vals2': vals2,
+         'chemicalKernelmat': chemicalKernelmat}
+    return frameprodFunc(**kargs)
 
 def framesprod(frames1, frames2=None, chemicalKernelmat=None, frameprodFunc=None, queue=None,dispbar=False):
+    global globalFrames
     '''
     Computes the environmental matrices between two list of AlchemyFrame.
 
@@ -175,19 +186,19 @@ def framesprod(frames1, frames2=None, chemicalKernelmat=None, frameprodFunc=None
     if frames2 is None:
         # when with itself only the upper global matrix is computed
         frames2 = frames1
-        for it, frame1 in enumerate(frames1):
-            keys1, vals1 = frame1.get_arrays()
-            # ii = 0
-            for jt, frame2 in enumerate(frames2):
+        globalFrames = frames1
+        combinations = []
+        for it in range(len(globalFrames)):
+            for jt in range(len(globalFrames)):
                 if it > jt:
                     continue
-                keys2, vals2 = frame2.get_arrays()
-                kargs = {'keys1': keys1, 'keys2': keys2, 'vals1': vals1, 'vals2': vals2,
-                         'chemicalKernelmat': chemicalKernelmat}
-                envkernels[(it, jt)] = frameprodFunc(**kargs)
-                # ii += 1
+                combinations.append((it,jt, frameprodFunc, chemicalKernelmat))
 
-                queue.put(1)
+        pool = mp.Pool(32)
+        for i, kernel in enumerate(pool.imap(process, combinations)):
+            envkernels[(combinations[i][0], combinations[i][1])] = kernel
+            queue.put(1)
+
     else:
 
         for it, frame1 in enumerate(frames1):
