@@ -185,7 +185,6 @@ def framesprod(frames1, frames2=None, chemicalKernelmat=None, frameprodFunc=None
 
     if frames2 is None:
         # when with itself only the upper global matrix is computed
-        frames2 = frames1
         globalFrames = frames1
         combinations = []
         for it in range(len(globalFrames)):
@@ -194,7 +193,7 @@ def framesprod(frames1, frames2=None, chemicalKernelmat=None, frameprodFunc=None
                     continue
                 combinations.append((it,jt, frameprodFunc, chemicalKernelmat))
 
-        pool = mp.Pool(32)
+        pool = mp.Pool(48)
         for i, kernel in enumerate(pool.imap(process, combinations)):
             envkernels[(combinations[i][0], combinations[i][1])] = kernel
             queue.put(1)
