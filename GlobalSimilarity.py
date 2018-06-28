@@ -204,6 +204,9 @@ if __name__ == '__main__':
              "-g"+str(gaussian_width)+ "-cw"+str(centerweight)+ \
              "-cotw" +str(cutoff_transition_width)
 
+    if args.nocenters != "":
+        prefix += '-nc'+args.nocenters
+
     if is_fast_average:
         print 'Compute fast average kernel'
         prefix += '-fastavg'

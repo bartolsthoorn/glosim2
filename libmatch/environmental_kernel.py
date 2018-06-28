@@ -1,10 +1,12 @@
 import numpy as np
 
+import libmatch
 from libmatch.chemical_kernel import Atoms2ChemicalKernelmat
 from libmatch.soap import get_Soaps
 from libmatch.utils import chunk_list, chunks1d_2_chuncks2d,is_notebook,dummy_queue
 from soap import get_Soaps
 import multiprocessing as mp
+from contextlib import closing
 import signal, psutil, os
 import threading
 
@@ -149,19 +151,17 @@ except:
 #     return envkernels
 
 
-globalFrames = None
-
-def process(params):
-    it, jt, frameprodFunc, chemicalKernelmat = params
-    keys1, vals1 = globalFrames[it].get_arrays()
-    keys2, vals2 = globalFrames[jt].get_arrays()
+def _process(ij):
+    i, j = ij
+    keys1, vals1 = libmatch.gframes[i].get_arrays()
+    keys2, vals2 = libmatch.gframes[j].get_arrays()
 
     kargs = {'keys1': keys1, 'keys2': keys2, 'vals1': vals1, 'vals2': vals2,
-         'chemicalKernelmat': chemicalKernelmat}
-    return frameprodFunc(**kargs)
+         'chemicalKernelmat': libmatch.gchemicalKernelmat}
+    return libmatch.gframeprodFunc(**kargs)
 
 def framesprod(frames1, frames2=None, chemicalKernelmat=None, frameprodFunc=None, queue=None,dispbar=False):
-    global globalFrames # share RAM: https://stackoverflow.com/a/17786444
+    # share RAM with global variables and forking: https://stackoverflow.com/a/17786444
     '''
     Computes the environmental matrices between two list of AlchemyFrame.
 
@@ -171,7 +171,6 @@ def framesprod(frames1, frames2=None, chemicalKernelmat=None, frameprodFunc=None
     :param frameprodFunc: function to use to compute a environmental kernel matrix
     :return: dictionary of environmental kernel matrices -> (i,j):environmentalMatrix(frames1[i],frames2[j])
     '''
-
 
     if queue is None:
         if frames2 is None:
@@ -185,18 +184,16 @@ def framesprod(frames1, frames2=None, chemicalKernelmat=None, frameprodFunc=None
 
     if frames2 is None:
         # when with itself only the upper global matrix is computed
-        globalFrames = frames1
-        combinations = []
-        for it in range(len(globalFrames)):
-            for jt in range(len(globalFrames)):
-                if it > jt:
-                    continue
-                combinations.append((it,jt, frameprodFunc, chemicalKernelmat))
+        libmatch.gframes = frames1
+        libmatch.gchemicalKernelmat = chemicalKernelmat
+        libmatch.gframeprodFunc = frameprodFunc
+        ij = np.array(np.triu_indices(len(libmatch.gframes))).T
 
-        pool = mp.Pool(48)
-        for i, kernel in enumerate(pool.imap(process, combinations)):
-            envkernels[(combinations[i][0], combinations[i][1])] = kernel
-            queue.put(1)
+        #manager = mp.Manager()
+        with closing(mp.Pool(48, maxtasksperchild=48)) as p:
+            for i, kernel in enumerate(p.imap_unordered(_process, ij)):
+                envkernels[(ij[i][0], ij[i][1])] = kernel
+                queue.put(1)
 
     else:
 
@@ -212,40 +209,6 @@ def framesprod(frames1, frames2=None, chemicalKernelmat=None, frameprodFunc=None
                 queue.put(1)
     return envkernels
 
-    # if frames2 is None:
-    #     # when with itself only the upper global matrix is computed
-    #     frames2 = frames1
-    #     n = len(frames1)
-    #     with tqdm_cs(total=int(n*(n-1)/2.),desc='Process {}'.format(proc_id),leave=True,position=pos,ascii=ascii,disable=disable_pbar) as pbar:
-    #         for it, frame1 in enumerate(frames1):
-    #             keys1, vals1 = frame1.get_arrays()
-    #             ii = 0
-    #             for jt, frame2 in enumerate(frames2):
-    #                 if it > jt:
-    #                     continue
-    #                 keys2, vals2 = frame2.get_arrays()
-    #                 kargs = {'keys1': keys1, 'keys2': keys2, 'vals1': vals1, 'vals2': vals2,
-    #                          'chemicalKernelmat': chemicalKernelmat}
-    #                 envkernels[(it, jt)] = frameprodFunc(**kargs)
-    #                 ii += 1
-    #             pbar.update(ii)
-    #             queue.put(ii)
-    # else:
-    #     n1 = len(frames1)
-    #     n2 = len(frames2)
-    #     with tqdm_cs(total=int(n1*n2), desc='Process {}'.format(proc_id),leave=True,position=pos,ascii=True,disable=disable_pbar) as pbar:
-    #         for it, frame1 in enumerate(frames1):
-    #             keys1, vals1 = frame1.get_arrays()
-    #             ii = 0
-    #             for jt, frame2 in enumerate(frames2):
-    #                 keys2, vals2 = frame2.get_arrays()
-    #                 kargs = {'keys1': keys1, 'keys2': keys2, 'vals1': vals1, 'vals2': vals2,
-    #                          'chemicalKernelmat': chemicalKernelmat}
-    #                 envkernels[(it, jt)] = frameprodFunc(**kargs)
-    #                 ii += 1
-    #             pbar.update(ii)
-    #             queue.put(ii)
-    # return envkernels
 
 def nb_frameprod_upper_multithread(**kargs):
     Nenv1, nA, nL = kargs['vals1'].shape
